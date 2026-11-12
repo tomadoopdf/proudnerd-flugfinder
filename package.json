@@ -1,0 +1,16 @@
+{
+  "name": "proudnerd-flugfinder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-City-Flugplaner für Künstler-Touren mit eigenem Claude-API-Key und Duffel-Live-Preisen",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "dev": "node --watch --env-file-if-exists=.env server.mjs"
+  },
+  "engines": { "node": ">=20.12" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0"
+  }
+}
