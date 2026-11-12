@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ProudNerdFlugfinder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: links die Anfrage (Chat), rechts die Tour als Abflugtafel. Oben vier klare Bereiche. */
+:root{
+  --bg:#eef1f6; --panel:#ffffff; --ink:#0f1b33; --muted:#5b6782; --line:#d6dce8;
+  --accent:#c98a12; --accent-ink:#1a1204; --accent-soft:#f7ebd2;
+  --board:#13213f; --board-fg:#f3e6c4;
+  --good:#1f7a4d; --good-soft:#dcf1e5; --warn:#a86400; --warn-soft:#fbecd2; --bad:#b3261e; --bad-soft:#f9dedb;
+  --live:#2457c5; --live-soft:#dfe8fb;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:12px; color-scheme:light;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0b1222; --panel:#121b30; --ink:#e7ecf6; --muted:#97a3bd; --line:#26324d;
+  --accent:#e8a933; --accent-soft:#3a2c10; --board:#070d1a; --board-fg:#f3e1b0;
+  --good:#5fd39a; --good-soft:#123527; --warn:#f0b558; --warn-soft:#3a2a10; --bad:#ff8a80; --bad-soft:#3d1714;
+  --live:#8fb0ff; --live-soft:#18264a; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
+[hidden]{display:none!important}
+.mono{font-family:var(--f-mono)} .num{font-variant-numeric:tabular-nums}
+.wrap{max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+header.top{background:var(--board);color:var(--board-fg);position:sticky;top:0;z-index:5}
+.top-in{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding-block:12px}
+.brand{font-family:var(--f-display);font-weight:900;font-stretch:72%;font-size:26px;text-transform:uppercase;line-height:1}
+.brand b{color:var(--accent)}
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap}
+nav.tabs button{background:transparent;border:1px solid transparent;color:var(--board-fg);opacity:.75;border-radius:999px;padding:6px 14px;font-weight:600}
+nav.tabs button[aria-selected="true"]{opacity:1;border-color:rgba(243,230,196,.35);background:rgba(243,230,196,.08)}
+.top-stats{display:flex;gap:18px;margin-left:auto}
+.top-stat{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.75}
+.top-stat strong{display:block;font-size:17px;letter-spacing:0;opacity:1;color:var(--accent);font-weight:600}
+
+main{padding-block:18px 120px}
+.plan-grid{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:960px){.plan-grid{grid-template-columns:minmax(0,1fr)}}
+.stack{display:flex;flex-direction:column;gap:18px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px;min-width:0}
+.card h2{font-family:var(--f-display);font-stretch:80%;font-weight:800;font-size:18px;text-transform:uppercase;letter-spacing:.03em;margin:0 0 4px;display:flex;align-items:center;gap:8px;text-wrap:balance}
+.card h2 .aside{margin-left:auto;font-family:var(--f-mono);font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.06em}
+.lead{color:var(--muted);margin:0 0 14px;font-size:13px}
+.note{font-size:12px;color:var(--muted)}
+.eyebrow{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--muted);font-weight:500;min-width:0}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0;width:100%}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px;font-weight:500}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button.small{padding:4px 10px;font-size:12px}
+button.link{background:none;border:none;padding:0;color:var(--ink);text-decoration:underline;text-underline-offset:3px;font-size:12.5px}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.row>*{flex:1 1 110px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.chip.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.chip.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.chip.live{background:var(--live-soft);color:var(--live);border-color:transparent}
+.chip.acc{background:var(--accent-soft);color:var(--ink);border-color:transparent}
+
+/* chat */
+.chat{display:flex;flex-direction:column;position:sticky;top:76px;max-height:calc(100vh - 96px)}
+@media (max-width:960px){.chat{position:static;max-height:none}}
+.msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px 12px;min-height:220px}
+.msg{max-width:94%;padding:9px 12px;border-radius:12px;font-size:13.5px;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.u{align-self:flex-end;background:var(--board);color:var(--board-fg);border-bottom-right-radius:4px}
+.msg.a{align-self:flex-start;background:var(--bg);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg.sys{align-self:center;font-size:12px;color:var(--muted);padding:2px}
+.sugg{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.sugg-item{display:flex;gap:8px;align-items:center;background:var(--accent-soft);border-radius:8px;padding:6px 10px;font-size:12.5px}
+.sugg-item span{flex:1}
+.examples{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.examples button{text-align:left;font-size:12.5px;background:var(--bg);border-style:dashed}
+.composer{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:8px}
+.composer textarea{resize:vertical;min-height:70px}
+.learned{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+
+/* tour */
+.count{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;background:var(--bg);border-radius:10px;margin-bottom:14px}
+.count .lbl{font-weight:600}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:var(--panel)}
+.stepper button{border:none;background:none;width:36px;height:36px;padding:0;font-size:18px;border-radius:999px}
+.stepper output{min-width:34px;text-align:center;font-family:var(--f-display);font-weight:900;font-stretch:80%;font-size:22px}
+.summary{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:auto}
+.details{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px}
+.check{display:flex;align-items:center;gap:8px;font-size:13px}
+.check input{width:auto}
+.legs-table{width:100%;border-collapse:separate;border-spacing:0 6px}
+.legs-table th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:600;padding:0 4px}
+.legs-table td{padding:0 4px;vertical-align:middle}
+.legs-table td.n{font-family:var(--f-mono);font-weight:600;color:var(--accent);width:28px}
+.legs-table input.code{text-transform:uppercase;font-family:var(--f-mono);font-weight:600;max-width:86px}
+.legs-table .city{font-size:11px;color:var(--muted);display:block;margin-top:2px;min-height:14px}
+.legs-table select{max-width:76px}
+.legs-table .x{padding:4px 8px;background:none;border:none;color:var(--muted);font-size:16px}
+.scroll-x{overflow-x:auto}
+.calc{width:100%;margin-top:12px;padding:12px;font-size:15px}
+
+/* results */
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:4px 0 14px}
+.plan{text-align:left;padding:10px 12px;border-radius:10px;background:var(--bg);display:flex;flex-direction:column;gap:2px}
+.plan[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.plan .t{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.plan .p{font-family:var(--f-display);font-stretch:85%;font-weight:800;font-size:20px}
+.plan .s{font-size:11.5px;color:var(--muted)}
+.callout{border-radius:9px;padding:10px 12px;font-size:12.5px;background:var(--bg);margin-bottom:8px}
+.callout.warn{background:var(--warn-soft)} .callout.bad{background:var(--bad-soft)} .callout.good{background:var(--good-soft)}
+.leg{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.leg-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px}
+.leg-no{background:var(--board);color:var(--accent);font-family:var(--f-mono);font-weight:600;border-radius:7px;padding:6px 8px;font-size:13px}
+.leg-route{min-width:0}
+.leg-route .r{font-family:var(--f-display);font-weight:900;font-stretch:75%;font-size:24px;line-height:1;letter-spacing:.02em}
+.leg-route .r span{color:var(--muted);font-weight:500;margin:0 6px}
+.leg-route .m{font-size:12px;color:var(--muted);margin-top:3px}
+.leg-price{text-align:right;font-family:var(--f-mono);font-weight:600;font-size:17px;white-space:nowrap}
+.leg-price small{display:block;font-weight:400;font-size:10.5px;color:var(--muted)}
+.leg-pick{padding:0 14px 12px;display:flex;flex-direction:column;gap:6px}
+.pick-line{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.al{font-family:var(--f-mono);font-weight:600;font-size:12px;background:var(--board);color:var(--board-fg);border-radius:5px;padding:3px 7px}
+.pick-line .t{font-weight:600}
+.pick-line .d{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.leg-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-top:1px dashed var(--line);background:var(--bg)}
+.leg-actions a{font-size:12px;color:var(--ink);text-decoration:none;border:1px solid var(--line);padding:3px 9px;border-radius:999px;background:var(--panel)}
+.leg-actions a:hover{border-color:var(--accent)}
+.alts{padding:6px 10px 10px;border-top:1px solid var(--line)}
+.opt{display:grid;grid-template-columns:18px 44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 8px;border-radius:7px;border:1px solid transparent;cursor:pointer}
+.opt:hover{background:var(--bg)} .opt.sel{border-color:var(--accent);background:var(--accent-soft)}
+.opt input{width:auto;margin:0}
+.opt .l1{font-weight:600;font-size:13px} .opt .l2{font-size:11.5px;color:var(--muted);font-family:var(--f-mono)}
+.opt .pr{font-family:var(--f-mono);font-weight:600;white-space:nowrap}
+.stab{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:var(--f-mono);color:var(--muted)}
+.stab i{display:inline-block;width:34px;height:5px;border-radius:3px;background:var(--line);position:relative;overflow:hidden}
+.stab i::after{content:"";position:absolute;inset:0 auto 0 0;width:var(--w);background:var(--c)}
+.empty{text-align:center;padding:28px 12px;color:var(--muted)}
+
+.totalbar{position:fixed;left:0;right:0;bottom:0;background:var(--board);color:var(--board-fg);z-index:6;padding-bottom:env(safe-area-inset-bottom,0px)}
+.totalbar .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:10px}
+.totalbar .big{font-family:var(--f-display);font-weight:900;font-stretch:80%;font-size:28px;color:var(--accent);line-height:1}
+.totalbar .sub{font-size:12px;opacity:.75}
+.totalbar .btns{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.totalbar button{background:transparent;color:var(--board-fg);border-color:rgba(243,230,196,.35)}
+.totalbar button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+
+/* passports, history, settings */
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;align-items:start}
+.pax{display:flex;gap:8px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;flex-wrap:wrap}
+.pax strong{flex:1 1 140px}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:20px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.pp-card{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:12px}
+.pp-head{display:flex;gap:10px;align-items:center;padding:10px 12px;background:var(--bg);flex-wrap:wrap}
+.pp-head b{font-family:var(--f-display);font-stretch:85%;font-size:16px}
+.pp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px 14px;padding:12px}
+.pp-grid span{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-family:var(--f-mono)}
+.mrz{font-family:var(--f-mono);font-size:12px;background:var(--board);color:var(--board-fg);padding:10px 12px;overflow-x:auto;white-space:pre;letter-spacing:.06em}
+.checks{padding:10px 12px;display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.ck{display:flex;gap:8px;align-items:baseline}
+.ck .ic{font-family:var(--f-mono);font-weight:600;width:16px}
+.ck.ok .ic{color:var(--good)} .ck.no .ic{color:var(--bad)} .ck.wa .ic{color:var(--warn)}
+.hist{width:100%;height:auto;display:block}
+.hist text{fill:var(--muted);font-family:var(--f-mono);font-size:10px}
+table.t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.t th,table.t td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.t th{font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.perm{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.perm p{margin:2px 0 0;font-size:12px;color:var(--muted)}
+.rule{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px 10px;border-radius:8px;background:var(--bg);font-size:12.5px;margin-bottom:6px}
+.rule.off{opacity:.5} .rule input{width:auto;margin-top:2px}
+.rule .src{font-family:var(--f-mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.links{display:flex;gap:6px;flex-wrap:wrap}
+.links a{font-size:12px;color:var(--ink);text-decoration:none;border:1px solid var(--line);padding:4px 10px;border-radius:999px}
+.links a:hover{border-color:var(--accent)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:9px;font-size:13px;z-index:20;max-width:calc(100% - 32px)}
+.modal{position:fixed;inset:0;background:rgba(7,13,26,.55);display:flex;align-items:center;justify-content:center;z-index:30;padding:16px}
+.modal .card{max-width:420px;width:100%}
+.modal p{margin:6px 0}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+@media (max-width:620px){.top-stats{display:none}.brand{font-size:22px}.totalbar .big{font-size:22px}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap top-in">
+  <div class="brand">ProudNerd<b>Flugfinder</b></div>
+  <nav class="tabs" role="tablist">
+    <button data-tab="plan" aria-selected="true">Planen</button>
+    <button data-tab="pax" aria-selected="false">Reisende &amp; Pässe</button>
+    <button data-tab="hist" aria-selected="false">Preisverlauf</button>
+    <button data-tab="set" aria-selected="false">Einstellungen</button>
+  </nav>
+  <div class="top-stats">
+    <div class="top-stat">Flüge<strong id="hs-legs" class="num">–</strong></div>
+    <div class="top-stat">Reisende<strong id="hs-pax" class="num">–</strong></div>
+    <div class="top-stat">Daten<strong id="hs-store" style="font-size:12px;padding-top:5px">…</strong></div>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <!-- PLANEN -->
+  <section id="tab-plan">
+    <div class="plan-grid">
+      <div class="card chat">
+        <h2>Was braucht ihr? <span class="aside" id="chat-state"></span></h2>
+        <p class="lead">Beschreib die Tour in eigenen Worten. Ich trage Route, Personen, Kabine und Gepäck ein und suche die beste Kombination.</p>
+        <div class="msgs" id="msgs"></div>
+        <div class="composer">
+          <div class="examples" id="examples">
+            <button>6 Flüge für 4 Personen Business: München → New York am 15.12., dann Los Angeles, Tokio, Singapur, Dubai, London. Je 2 Koffer und eine Gitarre.</button>
+            <button>Artist + Manager, Economy, Berlin → Paris 3.2., Paris → Madrid 6.2., Madrid → Lissabon 9.2. Nur Direktflüge.</button>
+            <button>Mach die Route günstiger, aber keine Nachtflüge.</button>
+          </div>
+          <form id="chat-form" class="stack" style="gap:8px">
+            <label class="f" for="chat-in">Deine Anfrage</label>
+            <textarea id="chat-in" placeholder="z. B. 5 Flüge, 3 Personen, Business, Start Frankfurt am 10.1. …"></textarea>
+            <button class="primary" type="submit">Anfrage senden</button>
+          </form>
+          <div class="learned" id="learned"></div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <h2>Tour <span class="aside" id="tour-meta"></span></h2>
+          <div class="count">
+            <span class="lbl">Wie viele Flüge hat die Tour?</span>
+            <div class="stepper"><button id="cnt-minus" aria-label="Einen Flug weniger">−</button><output id="cnt" class="num">0</output><button id="cnt-plus" aria-label="Einen Flug mehr">+</button></div>
+            <div class="summary" id="summary"></div>
+            <button class="small" id="toggle-details" aria-expanded="false">Personen &amp; Gepäck</button>
+          </div>
+          <div class="details" id="details" hidden>
+            <div class="row">
+              <label class="f">Erwachsene<input id="p-adt" type="number" min="1" max="20"></label>
+              <label class="f">Kinder 2–11<input id="p-chd" type="number" min="0" max="10"></label>
+              <label class="f">Babys &lt;2<input id="p-inf" type="number" min="0" max="5"></label>
+              <label class="f">Kabine<select id="p-cabin"><option value="eco">Economy</option><option value="pe">Premium Economy</option><option value="bus">Business</option><option value="first">First</option></select></label>
+            </div>
+            <div class="row">
+              <label class="f">Handgepäck p. P.<input id="b-cabin" type="number" min="0" max="2"></label>
+              <label class="f">Koffer 23 kg p. P.<input id="b-checked" type="number" min="0" max="6"></label>
+              <label class="f">Sondergepäck p. P.<input id="b-special" type="number" min="0" max="6"></label>
+              <label class="f">Max. Stopps<select id="p-stops"><option value="0">nur direkt</option><option value="1">bis 1</option><option value="2">bis 2</option></select></label>
+            </div>
+            <div class="row">
+              <label class="f">Budget gesamt (EUR)<input id="p-budget" type="number" min="0" step="500"></label>
+              <label class="f">Preisverhalten<select id="p-stab"><option value="0">nur günstig</option><option value="0.5">ausgewogen</option><option value="1">stabile Preise</option></select></label>
+            </div>
+            <label class="check"><input id="p-flex" type="checkbox">Flex-Tarife (umbuchbar, Preis schwankt kaum)</label>
+            <label class="check"><input id="p-oneticket" type="checkbox">Eine Allianz bevorzugen (ein Ticket, Gepäck durchgecheckt)</label>
+          </div>
+          <div class="scroll-x">
+            <table class="legs-table" id="legs"></table>
+          </div>
+          <datalist id="airports"></datalist>
+          <button class="primary calc" id="search">Beste Route berechnen</button>
+        </div>
+
+        <div class="card">
+          <h2>Ergebnis <span class="aside" id="res-meta"></span></h2>
+          <div class="plans" id="plans"></div>
+          <div id="warnings"></div>
+          <div id="results"></div>
+          <p class="note">Preise ohne blaues „Live“-Label sind Schätzungen aus dem Tarifmodell. „Live-Preise“ holt echte, buchbare Angebote von Duffel, je Flug und als Gesamtticket.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PÄSSE -->
+  <section id="tab-pax" hidden>
+    <div class="two">
+      <div class="card">
+        <h2>Reisende</h2>
+        <p class="lead">Namen genau wie im Pass, sonst gibt es Probleme beim Check-in.</p>
+        <div id="pax-list"></div>
+        <div class="row" style="margin-top:6px"><input id="new-pax" placeholder="z. B. Mila Hartmann" aria-label="Name"><select id="new-role" aria-label="Rolle" style="flex:0 1 150px"><option>Artist</option><option>Management</option><option>Security</option><option>Crew</option><option>Begleitung</option></select><button id="add-pax" style="flex:0 0 auto">Hinzufügen</button></div>
+      </div>
+      <div class="card">
+        <h2>Pass scannen</h2>
+        <div class="drop" id="drop">
+          <span class="note">Foto der Datenseite aufnehmen oder hierher ziehen. Claude liest die Daten, die App prüft Prüfziffern, Ablaufdatum (6-Monats-Regel) und den Namen.</span>
+          <div class="row" style="justify-content:center"><select id="scan-for" aria-label="Für Reisenden" style="flex:0 1 220px"></select><button class="primary" id="scan-btn" style="flex:0 0 auto">Foto aufnehmen / wählen</button></div>
+          <input type="file" id="scan-file" accept="image/*" capture="environment" hidden>
+          <details style="width:100%;text-align:left"><summary class="note" style="cursor:pointer">MRZ von Hand einfügen</summary>
+            <textarea id="mrz-in" rows="2" class="mono" style="margin-top:8px;font-size:12px" placeholder="P&lt;D&lt;&lt;MUSTERMANN&lt;&lt;ERIKA&lt;&lt;&lt;…"></textarea>
+            <button id="mrz-check" class="small" style="margin-top:6px">MRZ prüfen</button>
+          </details>
+        </div>
+        <p id="pp-status" class="note"></p>
+        <div id="pp-list"></div>
+        <p class="note">Einreise- und Visaregeln immer offiziell prüfen: <a href="https://www.iatatravelcentre.com/" target="_blank" rel="noopener">IATA Travel Centre</a>, <a href="https://www.auswaertiges-amt.de/de/ReiseUndSicherheit/reise-und-sicherheitshinweise" target="_blank" rel="noopener">Auswärtiges Amt</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- VERLAUF -->
+  <section id="tab-hist" hidden>
+    <div class="card">
+      <h2>Preisverlauf</h2>
+      <p class="lead">Jede Berechnung und jede Live-Prüfung wird gespeichert. So siehst du, ob die Preise steigen oder stabil sind.</p>
+      <div class="row" style="margin-bottom:12px">
+        <label class="f" style="flex:0 1 260px">Live-Preise automatisch prüfen<select id="auto-int"><option value="0">aus</option><option value="30">alle 30 Min.</option><option value="60">stündlich</option><option value="240">alle 4 Std.</option></select></label>
+        <span class="note" style="flex:2 1 200px">Läuft, solange die Seite offen ist.</span>
+      </div>
+      <div id="hist-chart"></div>
+      <div class="scroll-x"><table class="t" id="hist-table"></table></div>
+    </div>
+  </section>
+
+  <!-- EINSTELLUNGEN -->
+  <section id="tab-set" hidden>
+    <div class="two">
+      <div class="card">
+        <h2>Verbindungen &amp; Freigaben</h2>
+        <p class="lead">Die App fragt jeden Zugriff beim ersten Gebrauch. Freigaben kannst du hier entziehen.</p>
+        <div id="perms"></div>
+        <button id="perm-reset" class="small" style="margin-top:10px">Alle Freigaben zurücksetzen</button>
+      </div>
+      <div class="card">
+        <h2>Gelernte Vorlieben <span class="aside" id="rule-count"></span></h2>
+        <p class="lead">Was der Chat dauerhaft gelernt hat. Wirkt sofort auf Sortierung und Filter.</p>
+        <div id="rules"></div>
+      </div>
+      <div class="card">
+        <h2>Daten &amp; Teilen</h2>
+        <p class="lead">Alles wird nur im Browser dieses Geräts gespeichert. Um eine Tour weiterzugeben oder auf ein anderes Gerät zu holen, exportierst du sie als Datei und importierst sie dort.</p>
+        <div class="row">
+          <button id="exp">Tour exportieren</button>
+          <button id="exp-pp">Mit Passdaten exportieren</button>
+          <button id="imp-btn">Tour importieren</button>
+          <input type="file" id="imp" accept="application/json,.json" hidden>
+        </div>
+        <p class="note">Dateien mit Passdaten sind vertraulich. Nur verschlüsselt oder persönlich weitergeben.</p>
+        <button id="wipe" class="small" style="margin-top:6px">Alle Daten auf diesem Gerät löschen</button>
+      </div>
+      <div class="card">
+        <h2>Direkt buchen &amp; prüfen</h2>
+        <div id="ext-links"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="totalbar"><div class="wrap">
+  <div><div class="big num" id="tot">–</div><div class="sub" id="tot-sub">Noch keine Route berechnet</div></div>
+  <div class="btns">
+    <button id="live-all">Live-Preise</button>
+    <button class="primary" id="pdf">PDF für Agentur</button>
+  </div>
+</div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="engine.js"></script>
+<script src="assistant.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
