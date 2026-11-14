@@ -25,16 +25,18 @@ const S={
 let RESULTS=null,curTab='plan';
 
 /* ========== API & STORAGE ========== */
-let STATUS={claude:false,duffel:false},TOKEN='',saveT=null;
-try{TOKEN=localStorage.getItem('pnf-token')||''}catch{}
+let STATUS={chatgpt:{signedIn:false},duffel:false},saveT=null;
+const aiReady=()=>!!(STATUS.chatgpt&&STATUS.chatgpt.signedIn&&STATUS.chatgpt.plan);
 async function api(path,body,method){
-  const r=await fetch(path.replace(/^\//,''),{method:method||(body?'POST':'GET'),headers:{'Content-Type':'application/json',...(TOKEN?{Authorization:'Bearer '+TOKEN}:{})},body:body?JSON.stringify(body):undefined});
+  const r=await fetch(path.replace(/^\//,''),{method:method||(body?'POST':'GET'),headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
   const j=await r.json().catch(()=>({}));
-  if(r.status===401&&STATUS.auth){setTab('set');throw new Error('Zugangscode nötig (Einstellungen).')}
+  if(r.status===401&&j.code==='not_signed_in'){STATUS.chatgpt={signedIn:false};renderPerms();throw new Error('Bitte unter Einstellungen mit ChatGPT anmelden.')}
   if(!r.ok)throw new Error(j.error||('Serverfehler '+r.status));
   return j;
 }
-async function apiJson(prompt,image){const j=await api('api/json',{prompt,image});if(j.error)throw new Error(j.error);return j.data}
+function parseJsonText(t){t=String(t||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');const a=t.search(/[[{]/),b=Math.max(t.lastIndexOf('}'),t.lastIndexOf(']'));return JSON.parse(a>=0&&b>a?t.slice(a,b+1):t)}
+async function askChatGPT(instructions,text,image){const j=await api('api/ai',{instructions,text,image});return j.text}
+async function apiJson(prompt,image){return parseJsonText(await askChatGPT('Antworte ausschließlich mit gültigem JSON, ohne Erklärtext.',prompt,image))}
 function snapState(){return {trip:S.trip,example:S.example,rules:S.rules,pax:S.pax,passports:S.passports,history:S.history,consent:S.consent,chat:S.chat.map(c=>({r:c.r,t:c.t,sugg:c.sugg}))}}
 // Alle Daten bleiben im Browser dieses Geräts (kostenlos, kein Server-Speicher nötig).
 const STORE_KEY='pnf-state-v1';
@@ -48,11 +50,12 @@ async function load(){
   let stored=null;try{stored=JSON.parse(localStorage.getItem(STORE_KEY)||'null')}catch{}
   if(stored){applyState(stored);$('#hs-store').textContent='auf Gerät'}else $('#hs-store').textContent='neu';
   // server is optional: on a static host (GitHub Pages) there is none
-  try{const c=new AbortController();setTimeout(()=>c.abort(),6000);const r=await fetch('api/status',{signal:c.signal});STATUS=r.ok?await r.json():{claude:false,duffel:false,static:true}}catch{STATUS={claude:false,duffel:false,static:true}}
+  try{const c=new AbortController();setTimeout(()=>c.abort(),6000);const r=await fetch('api/status',{signal:c.signal});STATUS=r.ok?await r.json():{chatgpt:{signedIn:false},duffel:false,static:true}}catch{STATUS={chatgpt:{signedIn:false},duffel:false,static:true}}
   // one-time import of data saved by an older server version
   if(!stored&&!STATUS.static){try{const {state}=await api('api/state');if(state){applyState(state);save()}}catch{}}
-  $('#chat-state').textContent=STATUS.claude?'CLAUDE AKTIV':'ASSISTENT';
+  $('#chat-state').textContent=aiReady()?'CHATGPT AKTIV':'ASSISTENT';
   bindTrip();renderLegs();search();renderChat();renderPerms();
+  if(location.hash==='#chatgpt-ok'){history.replaceState(null,'',location.pathname);setTab('set');toast(aiReady()?'Mit ChatGPT angemeldet. Der Chat nutzt jetzt dein ChatGPT-Abo.':'Angemeldet, aber die Abo-Nutzung wurde nicht freigegeben.',4500)}
 }
 function exportData(withPassports){
   const data={app:'ProudNerdFlugfinder',version:1,exportedAt:new Date().toISOString(),...snapState()};
@@ -71,7 +74,7 @@ async function importData(file){
 
 /* ========== CONSENT ========== */
 const PERMS=[
-  ['claude','Claude (Anthropic API)','Chat-Anfragen, gelernte Vorlieben und Pass-Scan. Läuft über deinen eigenen API-Key auf dem Server.'],
+  ['chatgpt','ChatGPT (dein Plus/Pro-Abo)','Chat-Anfragen, gelernte Vorlieben und Pass-Scan. Läuft über dein eigenes ChatGPT-Konto.'],
   ['duffel','Duffel (Live-Flugpreise)','Holt echte, buchbare Angebote je Flug und als Multi-City-Gesamtticket.'],
   ['camera','Kamera','Passfoto direkt mit dem Handy aufnehmen. Alternativ Foto hochladen.'],
 ];
@@ -234,9 +237,9 @@ async function imgPayload(file){
 }
 async function scanPassport(file){
   const st=$('#pp-status');
-  if(!STATUS.claude){st.textContent='Foto-Scan braucht einen Anthropic-Key auf dem Server. Bis dahin die zwei MRZ-Zeilen unten im Pass von Hand abtippen, die Prüfung läuft trotzdem.';return}
-  if(!(await consent('claude')))return;
-  st.innerHTML='<span class="spin"></span> Claude liest den Pass …';
+  if(!aiReady()){st.textContent=STATUS.local?'Für den Foto-Scan unter Einstellungen mit ChatGPT anmelden. Bis dahin die zwei MRZ-Zeilen unten im Pass von Hand abtippen, die Prüfung läuft trotzdem.':'Foto-Scan geht nur in der lokal gestarteten App mit ChatGPT-Anmeldung. Hier die zwei MRZ-Zeilen von Hand abtippen, die Prüfung läuft trotzdem.';return}
+  if(!(await consent('chatgpt')))return;
+  st.innerHTML='<span class="spin"></span> ChatGPT liest den Pass …';
   try{
     const r=await apiJson(`Du liest die Datenseite eines Reisepasses aus dem Bild. Antworte NUR mit JSON:
 {"mrz1":"erste MRZ-Zeile exakt, 44 Zeichen mit <","mrz2":"zweite MRZ-Zeile exakt, 44 Zeichen","viz":{"surname":"","given":"","docNo":"","dob":"YYYY-MM-DD","expiry":"YYYY-MM-DD","nat":"3-Letter"},"quality":"gut|mittel|schlecht","notes":"Auffälligkeiten (Spiegelung, abgeschnitten, Verdacht auf Manipulation) oder leer"}
@@ -359,18 +362,6 @@ function tripSummary(){
     budget:S.trip.budget,flex:S.trip.flex,oneTicket:S.trip.oneTicket,plan:S.plan,plans:S.plans?Object.fromEntries(Object.entries(S.plans).map(([k,p])=>[k,Math.round(planTotal(p.keys,p.disc||1))])):{},
     total_eur:Math.round(chosen().reduce((s,x)=>s+(x?x.price:0),0)*currentDisc()),rules:S.rules.filter(r=>r.on).map(r=>r.text)};
 }
-const CHAT_TOOLS=[
-  {name:'set_trip',description:'Setzt die Tour. legs ersetzt die komplette Flugliste (Reihenfolge = Reiseverlauf, Gabelflüge erlaubt). Alle anderen Felder optional. Danach wird automatisch neu gerechnet. Gibt den neuen Stand zurück.',
-   input_schema:{type:'object',properties:{
-     legs:{type:'array',items:{type:'object',properties:{o:{type:'string',description:'IATA-Code Abflug'},d:{type:'string',description:'IATA-Code Ziel'},date:{type:'string',description:'YYYY-MM-DD'},flex:{type:'integer',description:'0-3 Tage Flexibilität'}},required:['o','d','date']}},
-     adt:{type:'integer'},chd:{type:'integer'},inf:{type:'integer'},cabin:{type:'string',enum:['eco','pe','bus','first']},maxStops:{type:'integer',enum:[0,1,2]},
-     bCabin:{type:'integer'},bChecked:{type:'integer',description:'Koffer 23 kg pro Person'},bSpecial:{type:'integer',description:'Sondergepäck pro Person (Instrumente, Equipment)'},
-     budget:{type:'number'},stab:{type:'number',enum:[0,0.5,1]},flex:{type:'boolean'},oneTicket:{type:'boolean'},
-     travelers:{type:'array',description:'Namen und Rollen, nur wenn genannt',items:{type:'object',properties:{name:{type:'string'},role:{type:'string'}},required:['name']}}}}},
-  {name:'set_flight_count',description:'Setzt nur die Anzahl der Flüge (1-12), wenn Städte noch fehlen. Neue Flüge starten am letzten Ziel.',input_schema:{type:'object',properties:{count:{type:'integer'}},required:['count']}},
-  {name:'choose_plan',description:'Wählt einen berechneten Plan: best, cheap, stable, fast, alliance, liveTrip',input_schema:{type:'object',properties:{plan:{type:'string'}},required:['plan']}},
-  {name:'get_trip',description:'Aktueller Stand: Flüge, gewählte Optionen, Alternativen, Pläne, Preise',input_schema:{type:'object',properties:{}}},
-];
 const TOOL_IMPL={
   set_trip(a){
     const T=S.trip;
@@ -386,37 +377,37 @@ const TOOL_IMPL={
   choose_plan(a){if(!S.plans[a.plan])return {error:'Plan nicht verfügbar',available:Object.keys(S.plans)};applyPlan(a.plan);return tripSummary()},
   get_trip(){return tripSummary()},
 };
-function systemPrompt(){
+function chatInstructions(){
   return `Du bist der Flug-Copilot von ProudNerdFlugfinder, einem Planer für Künstler-Touren mit mehreren Flügen hintereinander (Gabelflüge, oft 5-6 Flüge, selten ein klassischer Hin- und Rückflug). Heute ist ${iso(today)}.
 
-So arbeitest du:
-- Wenn der Nutzer beschreibt, was er braucht, rufe set_trip mit allen erkennbaren Angaben auf (Städte als IATA-Codes, Daten als YYYY-MM-DD, Personen, Kabine, Gepäck). Ohne Jahr: nächstes passendes Datum ab heute. Fehlen Daten für Folgeflüge, plane 3 Tage Abstand und sag das.
-- Nennt der Nutzer nur eine Anzahl Flüge ohne Städte, rufe set_flight_count auf und frag nach den Städten.
-- Fehlt etwas Wichtiges (z. B. Startort), frag in einem Satz nach, statt zu raten.
-- Nach jeder Änderung: fasse in höchstens 5 kurzen Zeilen zusammen (Route, Gesamtpreis, Empfehlung, Warnungen). Preise sind Schätzungen, außer source=live. Erwähne bei Bedarf den Button „Live-Preise“.
-- Antworte auf Deutsch, sachlich, ohne Markdown-Überschriften.
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form, ohne weiteren Text:
+{"reply":"Antwort an den Nutzer auf Deutsch, höchstens 5 kurze Zeilen, ohne Markdown",
+ "set_trip":null oder {"legs":[{"o":"IATA","d":"IATA","date":"YYYY-MM-DD","flex":0-3}],"adt":Zahl,"chd":Zahl,"inf":Zahl,"cabin":"eco|pe|bus|first","maxStops":0-2,"bCabin":Zahl,"bChecked":Zahl,"bSpecial":Zahl,"budget":Zahl,"stab":0|0.5|1,"flex":true|false,"oneTicket":true|false,"travelers":[{"name":"","role":""}]},
+ "flight_count":null oder Zahl 1-12,
+ "plan":null oder "best|cheap|stable|fast|alliance|liveTrip",
+ "rules":[{"text":"kurze Regel","effect":{"type":"preferAirline|avoidAirline|preferAlliance|maxStops|maxLayoverH|minLayoverH|departAfter|departBefore|noRedEye|avoidAirport|note","value":"z.B. LH, Star Alliance, 1, 3, 9, MUC"}}]}
+
+Regeln:
+- Beschreibt der Nutzer eine Tour, fülle set_trip mit allen erkennbaren Angaben. "legs" ersetzt die komplette Flugliste; lass Felder weg, die nicht genannt wurden. Ohne Jahr: nächstes passendes Datum ab heute. Fehlen Daten für Folgeflüge, plane 3 Tage Abstand und sag das im reply.
+- Nennt der Nutzer nur eine Anzahl Flüge ohne Städte, setze flight_count und frag im reply nach den Städten.
+- Fehlt etwas Wichtiges (z. B. Startort), frag im reply in einem Satz nach, statt zu raten.
+- "rules" nur für dauerhafte Vorlieben aus der letzten Nachricht (z. B. „nie Ryanair“, „keine Nachtflüge“), sonst []. Einmalige Tour-Angaben sind keine Vorlieben.
+- Preise im Stand der App sind Schätzungen, außer source=live. Nenne keine eigenen Preise; die App ergänzt den aktuellen Gesamtpreis selbst.
 
 Flughäfen im Schätzmodell: ${AP.map(a=>a.c+'='+a.city).join(', ')}. Andere IATA-Codes sind erlaubt, haben aber nur Live-Preise.
-Airline-Codes: ${AL.map(a=>a.c+'='+a.n).join(', ')}.
-
-Ganz am Ende deiner Antwort IMMER eine Zeile: ###RULES### gefolgt von einem JSON-Array mit dauerhaften Vorlieben, die der Nutzer in seiner letzten Nachricht geäußert hat (sonst []):
-###RULES### [{"text":"kurze Regel","effect":{"type":"preferAirline|avoidAirline|preferAlliance|maxStops|maxLayoverH|minLayoverH|departAfter|departBefore|noRedEye|avoidAirport|note","value":"z.B. LH, Star Alliance, 1, 3, 9, MUC"}}]
-Einmalige Angaben zur aktuellen Tour (Städte, Daten, Personenzahl) sind keine Vorlieben.`;
+Airline-Codes: ${AL.map(a=>a.c+'='+a.n).join(', ')}.`;
 }
-async function claudeLoop(messages){
-  for(let step=0;step<8;step++){
-    const r=await api('api/claude',{system:systemPrompt(),messages,tools:CHAT_TOOLS});
-    messages.push({role:'assistant',content:r.content});
-    if(r.stop_reason==='refusal')return 'Diese Anfrage kann ich nicht bearbeiten.';
-    if(r.stop_reason==='pause_turn')continue;
-    const uses=r.content.filter(b=>b.type==='tool_use');
-    if(r.stop_reason!=='tool_use'||!uses.length)return r.content.filter(b=>b.type==='text').map(b=>b.text).join('');
-    const results=[];
-    for(const u of uses){let out,err=false;try{const f=TOOL_IMPL[u.name];out=f?f(u.input||{}):{error:'Unbekanntes Tool'}}catch(e){out={error:e.message};err=true}
-      results.push({type:'tool_result',tool_use_id:u.id,content:JSON.stringify(out).slice(0,20000),...(err?{is_error:true}:{})})}
-    messages.push({role:'user',content:results});
-  }
-  return 'Ich habe die Tour angepasst.';
+async function chatgptTurn(text){
+  const prior=S.chat.slice(0,-2).filter(c=>(c.r==='user'||c.r==='assistant')&&c.t&&c.t!=='…').slice(-10).map(c=>(c.r==='user'?'Nutzer: ':'Copilot: ')+c.t).join('\n');
+  const input=`${prior?'Bisheriger Verlauf:\n'+prior+'\n\n':''}Aktueller Stand der App: ${JSON.stringify(tripSummary())}\n\nNeue Nachricht des Nutzers: ${text}`;
+  const raw=await askChatGPT(chatInstructions(),input);
+  let r;try{r=parseJsonText(raw)}catch{return {t:String(raw||'').trim()||'Keine Antwort erhalten.',sugg:[]}}
+  if(r.set_trip&&typeof r.set_trip==='object')TOOL_IMPL.set_trip(r.set_trip);
+  if(r.flight_count)TOOL_IMPL.set_flight_count({count:r.flight_count});
+  if(r.plan&&S.plans&&S.plans[r.plan])applyPlan(r.plan);
+  let t=String(r.reply||'Erledigt.').trim();
+  const ch=chosen();if((r.set_trip||r.flight_count||r.plan)&&ch.some(Boolean))t+=`\n\nGeschätzter Gesamtpreis (${S.plans[S.plan]?.t||'eigene Auswahl'}): ${eur(ch.reduce((s,x)=>s+(x?x.price:0),0)*currentDisc())}.`;
+  return {t,sugg:(Array.isArray(r.rules)?r.rules:[]).filter(x=>x&&x.text).slice(0,4)};
 }
 /* ========== EINGEBAUTER ASSISTENT (ohne KI-Schlüssel) ========== */
 function localAssistant(text){
@@ -456,28 +447,32 @@ let chatBusy=false;
 async function sendChat(text){
   text=text.trim();if(!text||chatBusy)return;
   S.chat.push({r:'user',t:text});renderChat();
-  if(!STATUS.claude||S.consent.claude==='denied'||!(await consent('claude'))){const r=localAssistant(text);S.chat.push({r:'assistant',t:r.t,sugg:r.sugg});S.chat=S.chat.slice(-40);save();renderChat();return}
+  if(!aiReady()||S.consent.chatgpt==='denied'||!(await consent('chatgpt'))){const r=localAssistant(text);S.chat.push({r:'assistant',t:r.t,sugg:r.sugg});S.chat=S.chat.slice(-40);save();renderChat();return}
   chatBusy=true;const ans={r:'assistant',t:'…'};S.chat.push(ans);renderChat();$('#chat-state').innerHTML='<span class="spin"></span> DENKT';
-  // last turns as plain text, current state goes along with the new message
-  const prior=S.chat.slice(0,-2).filter(c=>(c.r==='user'||c.r==='assistant')&&c.t&&c.t!=='…').slice(-10).map(c=>({role:c.r,content:c.t}));
-  while(prior.length&&prior[0].role!=='user')prior.shift();
-  const msgs=[];for(const m of [...prior,{role:'user',content:`${text}\n\n[Aktueller Stand der App: ${JSON.stringify(tripSummary())}]`}]){if(msgs.length&&msgs.at(-1).role===m.role)msgs.at(-1).content+='\n'+m.content;else msgs.push({...m})}
-  try{
-    const out=await claudeLoop(msgs);const [body,rj]=out.split('###RULES###');ans.t=body.trim()||'Erledigt.';
-    try{const arr=JSON.parse((rj||'[]').trim().replace(/^```(json)?|```$/g,''));ans.sugg=(Array.isArray(arr)?arr:[]).filter(x=>x&&x.text).slice(0,4)}catch{ans.sugg=[]}
-  }catch(e){ans.t='Das hat nicht geklappt: '+e.message}
-  chatBusy=false;$('#chat-state').textContent=STATUS.claude?'CLAUDE AKTIV':'ASSISTENT';S.chat=S.chat.slice(-40);save();renderChat();
+  try{const r=await chatgptTurn(text);ans.t=r.t;ans.sugg=r.sugg}
+  catch(e){ans.t='ChatGPT hat nicht geantwortet: '+e.message+'\n\nDer eingebaute Assistent hat übernommen:\n\n'+localAssistant(text).t}
+  chatBusy=false;$('#chat-state').textContent=aiReady()?'CHATGPT AKTIV':'ASSISTENT';S.chat=S.chat.slice(-40);save();renderChat();
 }
 
 /* ========== SETTINGS ========== */
 function renderPerms(){
-  const b=$('#perms');b.innerHTML='';const avail={claude:STATUS.claude,duffel:STATUS.duffel,camera:true};
-  PERMS.forEach(([k,n,d])=>{const c=S.consent[k]||'prompt';
+  const b=$('#perms');b.innerHTML='';const g=STATUS.chatgpt||{};
+  // ChatGPT account
+  const acct=el('div',{class:'perm'});
+  if(STATUS.static||!STATUS.local){acct.append(el('div',{},el('strong',{},'ChatGPT'),' ',el('span',{class:'chip warn'},'nur lokal'),el('p',{},'OpenAI erlaubt die Anmeldung mit ChatGPT nur, wenn die App auf deinem eigenen Rechner läuft. Diese Online-Version nutzt den eingebauten Assistenten. Anleitung zum lokalen Start: README.')),el('span'))}
+  else if(!g.signedIn){acct.append(el('div',{},el('strong',{},'ChatGPT'),' ',el('span',{class:'chip'},'nicht angemeldet'),el('p',{},'Melde dich mit deinem ChatGPT-Konto (Plus oder Pro) an. Chat und Pass-Scan nutzen dann dein Abo, ohne API-Key.')),el('a',{class:'btn-login',href:STATUS.loginUrl||'/auth/login'},'Mit ChatGPT anmelden'))}
+  else{
+    const sel=el('select',{'aria-label':'ChatGPT-Modell',style:'max-width:220px'},el('option',{},'Modelle laden …'));
+    api('api/models').then(m=>{sel.innerHTML='';m.models.forEach(x=>sel.append(el('option',{value:x.id,selected:x.id===m.selected},x.name)));if(!m.models.length)sel.append(el('option',{},'kein Modell verfügbar'))}).catch(e=>{sel.innerHTML='';sel.append(el('option',{},'Modelle nicht abrufbar'))});
+    sel.onchange=()=>api('api/model',{model:sel.value}).then(()=>toast('Modell gewählt: '+sel.value)).catch(e=>toast(e.message));
+    acct.append(el('div',{},el('strong',{},'ChatGPT'),' ',el('span',{class:'chip '+(g.plan?'good':'warn')},g.plan?'angemeldet':'Abo nicht freigegeben'),el('p',{},(g.email?g.email+' · ':'')+(g.plan?'Chat und Pass-Scan laufen über dein ChatGPT-Abo.':'Bitte abmelden und bei der erneuten Anmeldung die Nutzung des Abos erlauben.')),el('div',{class:'row',style:'margin-top:6px'},el('label',{class:'f',style:'flex:0 1 240px'},'Modell',sel))),
+      el('button',{class:'small',onclick:async()=>{try{await api('api/logout',{});STATUS.chatgpt={signedIn:false};renderPerms();$('#chat-state').textContent='ASSISTENT';toast('Abgemeldet.')}catch(e){toast(e.message)}}},'Abmelden'))}
+  b.append(acct);
+  const avail={chatgpt:aiReady(),duffel:STATUS.duffel,camera:true};
+  PERMS.filter(p=>p[0]!=='chatgpt'||aiReady()).forEach(([k,n,d])=>{const c=S.consent[k]||'prompt';
     const chip=!avail[k]?['bad','nicht eingerichtet']:c==='granted'?['good','erlaubt']:c==='denied'?['warn','abgelehnt']:['','fragt bei Nutzung'];
     const btn=!avail[k]?null:c==='granted'?el('button',{class:'small',onclick:()=>{S.consent[k]='denied';save();renderPerms()}},'Entziehen'):el('button',{class:'small',onclick:()=>{S.consent[k]='granted';save();renderPerms()}},'Erlauben');
     b.append(el('div',{class:'perm'},el('div',{},el('strong',{},n),' ',el('span',{class:'chip '+chip[0]},chip[1]),k==='duffel'&&STATUS.duffelMode==='test'?el('span',{class:'chip warn'},'Testmodus'):null,el('p',{},d)),btn||el('span')))});
-  b.append(el('div',{class:'perm'},el('div',{},el('strong',{},'Server'),' ',el('span',{class:'chip'},STATUS.static?'nicht verbunden':STATUS.model||'–'),el('p',{},STATUS.static?'Ohne Server (z. B. GitHub Pages): eingebauter Assistent, Schätzpreise, MRZ-Prüfung und PDF.':STATUS.auth?'Zugangscode aktiv. Schützt deinen API-Key vor fremder Nutzung.':'Kein Zugangscode gesetzt. Für einen öffentlichen Server APP_TOKEN setzen.')),el('span')));
-  if(STATUS.auth)b.append(el('div',{class:'row',style:'margin-top:10px'},el('input',{id:'tok',type:'password',placeholder:'Zugangscode','aria-label':'Zugangscode'}),el('button',{style:'flex:0 0 auto',onclick:()=>{const v=$('#tok').value.trim();if(v){TOKEN=v;try{localStorage.setItem('pnf-token',v)}catch{}load();toast('Zugangscode gespeichert.')}}},'Speichern')));
   const L=multiLinks(),grp=(t,a)=>el('div',{style:'margin-bottom:12px'},el('div',{class:'note',style:'margin-bottom:5px'},t),el('div',{class:'links'},...a.map(([n,u])=>el('a',{href:u,target:'_blank',rel:'noopener'},n))));
   const ex=$('#ext-links');ex.innerHTML='';
   ex.append(grp('Ganze Tour als Multi-City',[['Kayak',L.ky],['Google Flights',L.gf],['Skyscanner','https://www.skyscanner.de/transport/flugsuche-mehrere-staedte']]),
